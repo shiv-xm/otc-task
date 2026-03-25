@@ -1,0 +1,549 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+
+// Sales Order Header — top of the O2C chain
+model SalesOrderHeader {
+  id                           Int      @id @default(autoincrement())
+  salesOrder                   String   @unique                    // business key
+  salesOrderType               String?
+  salesOrganization            String?
+  distributionChannel          String?
+  organizationDivision         String?
+  salesGroup                   String?
+  salesOffice                  String?
+  soldToParty                  String?                            // → BusinessPartner.customer
+  creationDate                 String?
+  createdByUser                String?
+  lastChangeDateTime           String?
+  totalNetAmount               String?
+  overallDeliveryStatus        String?
+  overallOrdReltdBillgStatus   String?
+  overallSdDocReferenceStatus  String?
+  transactionCurrency          String?
+  pricingDate                  String?
+  requestedDeliveryDate        String?
+  headerBillingBlockReason     String?
+  deliveryBlockReason          String?
+  incotermsClassification      String?
+  incotermsLocation1           String?
+  customerPaymentTerms         String?
+  totalCreditCheckStatus       String?
+
+  items                        SalesOrderItem[]
+
+  @@index([soldToParty])
+  @@map("sales_order_headers")
+}
+
+// Sales Order Items — products ordered per sales order
+model SalesOrderItem {
+  id                      Int     @id @default(autoincrement())
+  salesOrder              String                                   // → SalesOrderHeader.salesOrder
+  salesOrderItem          String
+  salesOrderItemCategory  String?
+  material                String?                                  // → Product.product
+  requestedQuantity       String?
+  requestedQuantityUnit   String?
+  transactionCurrency     String?
+  netAmount               String?
+  materialGroup           String?
+  productionPlant         String?                                  // → Plant.plant
+  storageLocation         String?
+  salesDocumentRjcnReason String?
+  itemBillingBlockReason  String?
+
+  header                  SalesOrderHeader @relation(fields: [salesOrder], references: [salesOrder])
+
+  @@unique([salesOrder, salesOrderItem])
+  @@index([material])
+  @@index([productionPlant])
+  @@map("sales_order_items")
+}
+
+// Sales Order Schedule Lines — confirmed delivery dates per item
+model SalesOrderScheduleLine {
+  id                              Int    @id @default(autoincrement())
+  salesOrder                      String
+  salesOrderItem                  String
+  scheduleLine                    String
+  confirmedDeliveryDate           String?
+  orderQuantityUnit               String?
+  confdOrderQtyByMatlAvailCheck   String?
+
+  @@unique([salesOrder, salesOrderItem, scheduleLine])
+  @@index([salesOrder])
+  @@map("sales_order_schedule_lines")
+}
+
+// Outbound Delivery Header — physical shipment record
+model OutboundDeliveryHeader {
+  id                          Int    @id @default(autoincrement())
+  deliveryDocument            String @unique                       // business key
+  actualGoodsMovementDate     String?
+  actualGoodsMovementTime     String?
+  creationDate                String?
+  creationTime                String?
+  deliveryBlockReason         String?
+  hdrGeneralIncompletionStatus String?
+  headerBillingBlockReason    String?
+  lastChangeDate              String?
+  overallGoodsMovementStatus  String?
+  overallPickingStatus        String?
+  overallProofOfDeliveryStatus String?
+  shippingPoint               String?
+
+  items                       OutboundDeliveryItem[]
+
+  @@map("outbound_delivery_headers")
+}
+
+// Outbound Delivery Items — references back to sales order lines
+// JOIN: referenceSdDocument = SalesOrderHeader.salesOrder
+//       referenceSdDocumentItem = SalesOrderItem.salesOrderItem
+model OutboundDeliveryItem {
+  id                      Int    @id @default(autoincrement())
+  deliveryDocument        String                                   // → OutboundDeliveryHeader.deliveryDocument
+  deliveryDocumentItem    String
+  actualDeliveryQuantity  String?
+  batch                   String?
+  deliveryQuantityUnit    String?
+  itemBillingBlockReason  String?
+  lastChangeDate          String?
+  plant                   String?                                  // → Plant.plant
+  referenceSdDocument     String?                                  // → SalesOrderHeader.salesOrder
+  referenceSdDocumentItem String?                                  // → SalesOrderItem.salesOrderItem
+  storageLocation         String?
+
+  header                  OutboundDeliveryHeader @relation(fields: [deliveryDocument], references: [deliveryDocument])
+
+  @@unique([deliveryDocument, deliveryDocumentItem])
+  @@index([referenceSdDocument])
+  @@index([plant])
+  @@map("outbound_delivery_items")
+}
+
+// Billing Document Header — invoice / credit memo
+// accountingDocument links to JournalEntryItemAR
+model BillingDocumentHeader {
+  id                          Int    @id @default(autoincrement())
+  billingDocument             String @unique                       // business key
+  billingDocumentType         String?
+  creationDate                String?
+  creationTime                String?
+  lastChangeDateTime          String?
+  billingDocumentDate         String?
+  billingDocumentIsCancelled  String?
+  cancelledBillingDocument    String?
+  totalNetAmount              String?
+  transactionCurrency         String?
+  companyCode                 String?
+  fiscalYear                  String?
+  accountingDocument          String?                              // → JournalEntryItemAR.accountingDocument
+  soldToParty                 String?                              // → BusinessPartner.customer
+
+  items                       BillingDocumentItem[]
+
+  @@index([accountingDocument])
+  @@index([soldToParty])
+  @@map("billing_document_headers")
+}
+
+// Billing Document Items — references back to delivery
+// JOIN: referenceSdDocument = OutboundDeliveryHeader.deliveryDocument
+//       referenceSdDocumentItem = OutboundDeliveryItem.deliveryDocumentItem
+model BillingDocumentItem {
+  id                      Int    @id @default(autoincrement())
+  billingDocument         String                                   // → BillingDocumentHeader.billingDocument
+  billingDocumentItem     String
+  material                String?                                  // → Product.product
+  billingQuantity         String?
+  billingQuantityUnit     String?
+  netAmount               String?
+  transactionCurrency     String?
+  referenceSdDocument     String?                                  // → OutboundDeliveryHeader.deliveryDocument
+  referenceSdDocumentItem String?                                  // → OutboundDeliveryItem.deliveryDocumentItem
+
+  header                  BillingDocumentHeader @relation(fields: [billingDocument], references: [billingDocument])
+
+  @@unique([billingDocument, billingDocumentItem])
+  @@index([referenceSdDocument])
+  @@index([material])
+  @@map("billing_document_items")
+}
+
+// Billing Document Cancellations — mirrors header structure for cancelled docs
+model BillingDocumentCancellation {
+  id                          Int    @id @default(autoincrement())
+  billingDocument             String @unique
+  billingDocumentType         String?
+  creationDate                String?
+  creationTime                String?
+  lastChangeDateTime          String?
+  billingDocumentDate         String?
+  billingDocumentIsCancelled  String?
+  cancelledBillingDocument    String?
+  totalNetAmount              String?
+  transactionCurrency         String?
+  companyCode                 String?
+  fiscalYear                  String?
+  accountingDocument          String?
+  soldToParty                 String?
+
+  @@map("billing_document_cancellations")
+}
+
+// Journal Entry Items (AR) — accounting postings
+// Links billing to the general ledger
+// clearingAccountingDocument + clearingDocFiscalYear → PaymentAR  
+model JournalEntryItemAR {
+  id                              Int    @id @default(autoincrement())
+  companyCode                     String
+  fiscalYear                      String
+  accountingDocument              String                           // groups items per posting
+  accountingDocumentItem          String
+  glAccount                       String?
+  referenceDocument               String?
+  costCenter                      String?
+  profitCenter                    String?
+  transactionCurrency             String?
+  amountInTransactionCurrency     String?
+  companyCodeCurrency             String?
+  amountInCompanyCodeCurrency     String?
+  postingDate                     String?
+  documentDate                    String?
+  accountingDocumentType          String?
+  assignmentReference             String?
+  lastChangeDateTime              String?
+  customer                        String?                          // → BusinessPartner.customer
+  financialAccountType            String?
+  clearingDate                    String?
+  clearingAccountingDocument      String?                          // → PaymentAR.accountingDocument
+  clearingDocFiscalYear           String?
+
+  @@unique([companyCode, fiscalYear, accountingDocument, accountingDocumentItem])
+  @@index([accountingDocument])
+  @@index([clearingAccountingDocument])
+  @@index([customer])
+  @@map("journal_entry_items_ar")
+}
+
+// Payments (AR) — cash receipts / clearing documents
+model PaymentAR {
+  id                              Int    @id @default(autoincrement())
+  companyCode                     String
+  fiscalYear                      String
+  accountingDocument              String                           // clearing doc key
+  accountingDocumentItem          String
+  clearingDate                    String?
+  clearingAccountingDocument      String?
+  clearingDocFiscalYear           String?
+  amountInTransactionCurrency     String?
+  transactionCurrency             String?
+  amountInCompanyCodeCurrency     String?
+  companyCodeCurrency             String?
+  customer                        String?                          // → BusinessPartner.customer
+  invoiceReference                String?                          // → BillingDocumentHeader.billingDocument
+  invoiceReferenceFiscalYear      String?
+  salesDocument                   String?                          // → SalesOrderHeader.salesOrder
+  salesDocumentItem               String?
+  postingDate                     String?
+  documentDate                    String?
+  assignmentReference             String?
+  glAccount                       String?
+  financialAccountType            String?
+  profitCenter                    String?
+  costCenter                      String?
+
+  @@unique([companyCode, fiscalYear, accountingDocument, accountingDocumentItem])
+  @@index([invoiceReference])
+  @@index([salesDocument])
+  @@index([customer])
+  @@map("payments_ar")
+}
+
+// Business Partner — customers and other trading partners
+model BusinessPartner {
+  id                        Int    @id @default(autoincrement())
+  businessPartner           String @unique                         // BP number
+  customer                  String?                                // SAP Customer ID (soldToParty)
+  businessPartnerCategory   String?
+  businessPartnerFullName   String?
+  businessPartnerGrouping   String?
+  businessPartnerName       String?
+  correspondenceLanguage    String?
+  createdByUser             String?
+  creationDate              String?
+  creationTime              String?
+  firstName                 String?
+  formOfAddress             String?
+  industry                  String?
+  lastChangeDate            String?
+  lastName                  String?
+  organizationBpName1       String?
+  organizationBpName2       String?
+  businessPartnerIsBlocked  String?
+  isMarkedForArchiving      String?
+
+  addresses                 BusinessPartnerAddress[]
+
+  @@index([customer])
+  @@map("business_partners")
+}
+
+// Business Partner Addresses
+model BusinessPartnerAddress {
+  id                        Int    @id @default(autoincrement())
+  businessPartner           String                                 // → BusinessPartner.businessPartner
+  addressId                 String
+  validityStartDate         String?
+  validityEndDate           String?
+  addressUuid               String?
+  addressTimeZone           String?
+  cityName                  String?
+  country                   String?
+  poBox                     String?
+  poBoxDeviatingCityName    String?
+  poBoxDeviatingCountry     String?
+  poBoxDeviatingRegion      String?
+  poBoxIsWithoutNumber      String?
+  poBoxLobbyName            String?
+  poBoxPostalCode           String?
+  postalCode                String?
+  region                    String?
+  streetName                String?
+  taxJurisdiction           String?
+  transportZone             String?
+
+  partner                   BusinessPartner @relation(fields: [businessPartner], references: [businessPartner])
+
+  @@unique([businessPartner, addressId])
+  @@map("business_partner_addresses")
+}
+
+// Customer Company Assignments — FI-level customer settings
+model CustomerCompanyAssignment {
+  id                              Int    @id @default(autoincrement())
+  customer                        String
+  companyCode                     String
+  accountingClerk                 String?
+  accountingClerkFaxNumber        String?
+  accountingClerkInternetAddress  String?
+  accountingClerkPhoneNumber      String?
+  alternativePayerAccount         String?
+  paymentBlockingReason           String?
+  paymentMethodsList              String?
+  paymentTerms                    String?
+  reconciliationAccount           String?
+  deletionIndicator               String?
+  customerAccountGroup            String?
+
+  @@unique([customer, companyCode])
+  @@map("customer_company_assignments")
+}
+
+// Customer Sales Area Assignments — SD-level customer settings
+model CustomerSalesAreaAssignment {
+  id                          Int    @id @default(autoincrement())
+  customer                    String
+  salesOrganization           String
+  distributionChannel         String
+  division                    String
+  billingIsBlockedForCustomer String?
+  completeDeliveryIsDefined   String?
+  creditControlArea           String?
+  currency                    String?
+  customerPaymentTerms        String?
+  deliveryPriority            String?
+  incotermsClassification     String?
+  incotermsLocation1          String?
+  salesGroup                  String?
+  salesOffice                 String?
+  shippingCondition           String?
+  slsUnlmtdOvrdelivIsAllwd    String?
+  supplyingPlant              String?
+  salesDistrict               String?
+  exchangeRateType            String?
+
+  @@unique([customer, salesOrganization, distributionChannel, division])
+  @@map("customer_sales_area_assignments")
+}
+
+// Products — material master
+model Product {
+  id                         Int    @id @default(autoincrement())
+  product                    String @unique                        // material number
+  productType                String?
+  crossPlantStatus           String?
+  crossPlantStatusValidityDate String?
+  creationDate               String?
+  createdByUser              String?
+  lastChangeDate             String?
+  lastChangeDateTime         String?
+  isMarkedForDeletion        String?
+  productOldId               String?
+  grossWeight                String?
+  weightUnit                 String?
+  netWeight                  String?
+  productGroup               String?
+  baseUnit                   String?
+  division                   String?
+  industrySector             String?
+
+  descriptions               ProductDescription[]
+  productPlants              ProductPlant[]
+
+  @@map("products")
+}
+
+// Product Descriptions — multi-language product names
+model ProductDescription {
+  id                 Int    @id @default(autoincrement())
+  product            String
+  language           String
+  productDescription String?
+
+  item               Product @relation(fields: [product], references: [product])
+
+  @@unique([product, language])
+  @@map("product_descriptions")
+}
+
+// Plants — production / distribution locations
+model Plant {
+  id                              Int    @id @default(autoincrement())
+  plant                           String @unique                   // plant code
+  plantName                       String?
+  valuationArea                   String?
+  plantCustomer                   String?
+  plantSupplier                   String?
+  factoryCalendar                 String?
+  defaultPurchasingOrganization   String?
+  salesOrganization               String?
+  addressId                       String?
+  plantCategory                   String?
+  distributionChannel             String?
+  division                        String?
+  language                        String?
+  isMarkedForArchiving            String?
+
+  productPlants                   ProductPlant[]
+
+  @@map("plants")
+}
+
+// Product-Plant assignments — where products are stored
+model ProductPlant {
+  id                            Int    @id @default(autoincrement())
+  product                       String
+  plant                         String
+  countryOfOrigin               String?
+  regionOfOrigin                String?
+  productionInvtryManagedLoc    String?
+  availabilityCheckType         String?
+  fiscalYearVariant             String?
+  profitCenter                  String?
+  mrpType                       String?
+
+  productItem                   Product @relation(fields: [product], references: [product])
+  plantItem                     Plant   @relation(fields: [plant], references: [plant])
+
+  @@unique([product, plant])
+  @@map("product_plants")
+}
+
+// Product Storage Locations
+model ProductStorageLocation {
+  id              Int    @id @default(autoincrement())
+  product         String
+  plant           String
+  storageLocation String
+
+  @@unique([product, plant, storageLocation])
+  @@map("product_storage_locations")
+}
+
+// ────────────────────────────────────────────────────────────
+// LAYER 2 — GRAPH DERIVED TABLES
+// ────────────────────────────────────────────────────────────
+
+// GraphNode — one row per logical entity in the O2C graph
+// entityType values: SalesOrder | DeliveryHeader | BillingDocument |
+//   JournalEntry | Payment | Customer | Product | Plant | Address
+model GraphNode {
+  id           String  @id                     // e.g. "SO-740506"
+  entityType   String                          // e.g. "SalesOrder"
+  businessKey  String                          // raw value, e.g. "740506"
+  label        String                          // display name
+  subtitle     String?                         // secondary line
+  metadata     String                          // JSON blob of all fields
+  searchText   String                          // concatenated for full-text search
+
+  outgoingEdges GraphEdge[] @relation("EdgeSource")
+  incomingEdges GraphEdge[] @relation("EdgeTarget")
+  aliases       EntityAlias[]
+
+  @@index([entityType])
+  @@index([businessKey])
+  @@map("graph_nodes")
+}
+
+// GraphEdge — directed relationship between two nodes
+// relationType examples:
+//   HAS_ITEM | PLACED_BY | HAS_DELIVERY | DELIVERED_VIA |
+//   BILLED_FROM_DELIVERY | POSTED_TO_JOURNAL | CLEARED_BY |
+//   REFERENCES_PRODUCT | LOCATED_AT_PLANT | HAS_ADDRESS
+model GraphEdge {
+  id           String  @id
+  fromNodeId   String                          // → GraphNode.id
+  toNodeId     String                          // → GraphNode.id
+  relationType String
+  metadata     String  @default("{}")          // JSON with extra edge data
+
+  source       GraphNode @relation("EdgeSource", fields: [fromNodeId], references: [id])
+  target       GraphNode @relation("EdgeTarget", fields: [toNodeId], references: [id])
+
+  @@index([fromNodeId])
+  @@index([toNodeId])
+  @@index([relationType])
+  @@map("graph_edges")
+}
+
+// Entity Aliases — Maps alternate names / synonyms to node IDs
+model EntityAlias {
+  id      Int    @id @default(autoincrement())
+  alias   String @unique
+  nodeId  String
+  
+  node    GraphNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  
+  @@index([nodeId])
+  @@map("entity_aliases")
+}
+
+// ────────────────────────────────────────────────────────────
+// LAYER 3 — OPERATIONAL TABLES
+// ────────────────────────────────────────────────────────────
+
+// QueryLog — records every NL query for debugging and demo replay
+model QueryLog {
+  id            Int      @id @default(autoincrement())
+  question      String
+  intent        String?                        // JSON: entity, filter, aggregation
+  generatedSql  String?
+  rowCount      Int?
+  answer        String?
+  durationMs    Int?
+  wasRejected   Boolean  @default(false)
+  rejectionReason String?
+  createdAt     DateTime @default(now())
+
+  @@map("query_logs")
+}
