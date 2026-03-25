@@ -55,3 +55,4 @@ logs/
 # AI IDE cache
 .gemini/
 .antigravity/
+.env*.local
