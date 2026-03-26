@@ -6,7 +6,6 @@ import * as readline from "readline";
 
 const prisma = new PrismaClient();
 
-// ─── Helpers ────────────────────────────────────────────────
 
 function str(v: unknown): string | null {
   if (v === null || v === undefined || v === "") return null;
@@ -779,18 +778,20 @@ async function main() {
   let totalErrors = 0;
 
   for (const [label, dirname, fn] of tasks) {
+    console.log(`Starting ${label}...`);
     const dir = path.join(dataDir, dirname);
     const rows = await readAllJsonlInDir(dir);
     const result = await fn(rows);
     logResult(label, result.inserted, result.skipped, result.errors);
     totalInserted += result.inserted;
     totalErrors += result.errors;
+    console.log(`Finished ${label}`);
   }
 
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
   console.log(`\n  ─────────────────────────────────────────────────────`);
   console.log(`  Total inserted: ${totalInserted}  |  Total errors: ${totalErrors}  |  Time: ${elapsed}s`);
-  console.log(`\n  ✅ Ingestion complete. Run 'npm run build-graph' next.`);
+  console.log(`\n  Ingestion complete. Run 'npm run build-graph' next.`);
   console.log();
 }
 

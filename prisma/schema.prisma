@@ -4,10 +4,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-
 
 // Sales Order Header — top of the O2C chain
 model SalesOrderHeader {
